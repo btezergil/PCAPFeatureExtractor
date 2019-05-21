@@ -14,70 +14,95 @@ MAX_ITERATIONS = 1e+5
 # o is the observation matrix, size Nxt 
 # pi is the initial state probability, for our case it is fixed with the first state having 1 and the rest 0
 
+def scalar_dict_mult(scalar, dct):
+    # DICTIONARY MULTIPLICATION WITH SCALAR CODE
+    # either uses lst for list of dictionaries or uses dct for a single dictionary
+    newdict = {}
+    for key in dct:
+        newdict[key] = scalar*dct[key]
+
+    return newdict
+
+def scalar_listofdicts_mult(scalar, lst):
+    newlist = []
+    
+    for val in lst:
+        newdict = {}
+        for key in val:
+            newdict[key] = 2*val[key]
+        newlist.append(newdict)
+
+    return newlist
+
+def list_listofdicts_mult(lst, dictlst):
+    newlist = []
+    
+    for i in range(0, len(lst)):
+
+
+    for val in lst:
+        newdict = {}
+        for key in val:
+            newdict[key] = 2*val[key]
+        newlist.append(newdict)
+
+    return newlist
+
+def getprob(b, o, state):
+    # gets the probability of observing o by getting all the probabilities of elements in o and multiplying them
+    prob = 1
+    for i in range(0, len(b[state])):
+        prob *= b[state][i][o[i]]
+    return prob
+
 def forward(a, b, o, pi):
     # HMM forward algorithm implementation 
 
     numberOfStates = np.shape(a)[0]
     timeStep = np.shape(o)[0]
-    alpha = np.zeros((numberOfStates,t)) # initialize alpha matrix as Nxt
+    alpha = [[]]
 
-    alpha[:,0] = pi * b[:,0] # TODO: b[:,0] does not give an element but a distribution, find out the matching element and give its distribution
+    # initialization step
+    for i in range(0, numberOfStates):
+        alpha[0].append(scalar_listofdicts_mult(pi[i], b[i]))
 
     # inductive step
     for t in range(1, timeStep):
-        for i in range(numberOfStates):
-            alpha[i,t] = b[i,o[t]] * np.sum(alpha[:,t-1] * a[:,i])
-
-
-    
-
-    def HMMfwd(self, a, b, o, pi):
-        # Implements HMM Forward algorithm
-    
-        N = np.shape(b)[0]
-        T = np.shape(o)[0]
-    
-        alpha = np.zeros((N,T))
-        # initialise first column with observation values
-        alpha[:,0] = pi*b[:,o[0]]
-        c = np.ones((T))
+        tmp = []
         
-        if self.scaling:
-            
-            c[0]=1.0/np.sum(alpha[:,0])
-            alpha[:,0]=alpha[:,0]*c[0]
-            
-            for t in xrange(1,T):
-                c[t]=0
-                for i in xrange(N):
-                    alpha[i,t] = b[i,o[t]] * np.sum(alpha[:,t-1] * a[:,i])
-                c[t]=1.0/np.sum(alpha[:,t])
-                alpha[:,t]=alpha[:,t]*c[t]
-
-        else:
-            for t in xrange(1,T):
-                for i in xrange(N):
-                    alpha[i,t] = b[i,o[t]] * np.sum(alpha[:,t-1] * a[:,i])
+        for i in range(0, numberOfStates):
+            probsum = 0
+            for j in range(0, numberOfStates):
+                probsum += alpha[t-1][j] * a[j][i]
+            tmp.append(probsum * getprob(b, o[t], i))
         
-        return alpha, c
+        alpha.append(tmp)
 
-    def HMMbwd(self, a, b, o, c):
-        # Implements HMM Backward algorithm
-    
-        N = np.shape(b)[0]
-        T = np.shape(o)[0]
-    
-        beta = np.zeros((N,T))
-        # initialise last row with scaling c
-        beta[:,T-1] = c[T-1]
-    
-        for t in xrange(T-2,-1,-1):
-            for i in xrange(N):
-                beta[i,t] = np.sum(b[:,o[t+1]] * beta[:,t+1] * a[i,:])
-            # scale beta by the same value as a
-            beta[:,t]=beta[:,t]*c[t]
+    return alpha
 
-        return beta
+def backward(a, b, o):
+    # HMM backward algorithm implementation
+
+    numberOfStates = np.shape(a)[0]
+    timeStep = np.shape(o)[0]
+
+    beta = [[]]
+
+    # initialization step
+    for i in range(0, numberOfStates):
+        beta[0].append(1)
+
+    # inductive step
+    for t in range(T-2, -1, -1):
+        for i in range(0, numberOfStates):
+            probsum = 0
+            for j in range(0, numberOfStates):
+                # beta[0] is used here because since we fill it by using the procedure, the last element inserted is the result of the last iteration
+                probsum += beta[0][j] * a[j][i] * getprob(b, o[t+1], j)
+            tmp.append(probsum)
+        beta.insert(0, tmp)
+
+    return beta
 
     def HMMViterbi(self, a, b, o, pi):
         # Implements HMM Viterbi algorithm        
