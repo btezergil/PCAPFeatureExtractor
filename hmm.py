@@ -222,16 +222,9 @@ def initializeMatrices(statecount):
     a = []
     b = []
     pi = [1]
-    prob = 1 / statecount
-    # TODO: noise can be added to prob in order to differentiate the probabilities
-    # initialize a, currently uniform probabilities
-    for i in range(0, statecount):
-        tmp = []
-        for j in range(0, statecount):
-            tmp.append(prob)
-        a.append(tmp)
-
-    # a = np.random.dirichlet(np.ones(statecount),size=statecount)
+    
+    # initialize a using dirichlet distribution for every row
+    a = np.random.dirichlet(np.ones(statecount),size=statecount)
 
     # initialize b
     # b array structure is as follows:
@@ -244,12 +237,14 @@ def initializeMatrices(statecount):
     # x14-x16 -> TLS-STUN-TCP percentages (0,1,2)
     for i in range(0, statecount):
         tmp = []
-        # TODO: the probabilities in dct can be random using dirichlet distr.
+        # dirichlet distribution is used to initialize the emission probabilities
         for j in range(1, 7):
-            dct = {'0':0.5, '1':0.5}
+            rand = np.random.dirichlet(np.ones(2),size=1)
+            dct = {'0':rand[0][0], '1':rand[0][1]}
             tmp.append(dct)
         for j in range(7, 17):
-            dct = {'0':0.33, '1':0.33, '2':0.34}
+            rand = np.random.dirichlet(np.ones(3),size=1)
+            dct = {'0':rand[0][0], '1':rand[0][1], '2':rand[0][2]}
             tmp.append(dct)
         b.append(tmp)
 
