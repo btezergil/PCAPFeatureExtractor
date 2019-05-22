@@ -64,7 +64,6 @@ def forward(a, b, o, pi):
 
     # initialization step
     for i in range(0, numberOfStates):
-        #alpha[0].append(scalar_listofdicts_mult(pi[i], b[i]))
         alpha[0].append(pi[i], getprob(b, o[0], i))
 
     # inductive step
@@ -94,7 +93,7 @@ def backward(a, b, o):
         beta[0].append(1)
 
     # inductive step
-    for t in range(T-2, -1, -1):
+    for t in range(timeStep-2, -1, -1):
         for i in range(0, numberOfStates):
             probsum = 0
             for j in range(0, numberOfStates):
@@ -105,30 +104,40 @@ def backward(a, b, o):
 
     return beta
 
-    def HMMViterbi(self, a, b, o, pi):
-        # Implements HMM Viterbi algorithm        
-        
-        N = np.shape(b)[0]
-        T = np.shape(o)[0]
-    
-        path = np.zeros(T)
-        delta = np.zeros((N,T))
-        phi = np.zeros((N,T))
-    
-        delta[:,0] = pi * b[:,o[0]]
-        phi[:,0] = 0
-    
-        for t in xrange(1,T):
-            for i in xrange(N):
-                delta[i,t] = np.max(delta[:,t-1]*a[:,i])*b[i,o[t]]
-                phi[i,t] = np.argmax(delta[:,t-1]*a[:,i])
-    
-        path[T-1] = np.argmax(delta[:,T-1])
-        for t in xrange(T-2,-1,-1):
-            path[t] = phi[int(path[t+1]),t+1]
-    
-        return path,delta, phi
+def viterbi(a, b, o, pi):
+    # HMM viterbi algorithm implementation
 
+    numberOfStates = np.shape(a)[0]
+    timeStep = np.shape(o)[0]
+
+    delta = [[]]
+    phi = [[]]
+
+    path = []
+
+    # initialization step
+    for i in range(0, numberOfStates):
+        phi[0][i] = 0
+        delta[0][i] = pi[i] * getprob(b, o[0], i)
+
+    # inductive step
+    for t in range(1, timeStep):.
+        path.append([])
+        for i in range(0, numberOfStates):
+            maxarr = []
+            # note that for phi and delta the same argument is used, delta has an extra factor and phi uses argmax instead of max, so we use the same list
+            for j in range(0, numberOfStates):
+                maxarr.append(delta[t-1][j] * a[j][i])
+            
+            phi[t][i] = np.argmax(maxarr)
+            delta[t][i] = max(maxarr) * getprob(b, o[t], i)
+
+    path[-1] = np.argmax(delta[timeStep-1])
+
+    for t in range(timeStep-2, -1, -1):
+        path[t] = phi[t+1][path[t+1]]
+
+    return path, delta, phi
  
     def HMMBaumWelch(self, o, N, dirichlet=False, verbose=False, rand_seed=1):
         # Implements HMM Baum-Welch algorithm        
