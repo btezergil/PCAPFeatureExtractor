@@ -64,7 +64,8 @@ def forward(a, b, o, pi):
 
     # initialization step
     for i in range(0, numberOfStates):
-        alpha[0].append(scalar_listofdicts_mult(pi[i], b[i]))
+        #alpha[0].append(scalar_listofdicts_mult(pi[i], b[i]))
+        alpha[0].append(pi[i], getprob(b, o[0], i))
 
     # inductive step
     for t in range(1, timeStep):
