@@ -5,6 +5,8 @@ import extractor
 
 TOLERANCE = 1e-6
 MAX_ITERATIONS = 1e+5
+OBSERVATION_LENGTH = 17
+OBSERVATION_BINARY_COUNT = 6
 
 # FOR ALL IMPLEMENTATIONS, THE FOLLOWING PARAMETERS ARE USED: 
 # there are N hidden states, t observations with each having M elements. 
@@ -13,40 +15,6 @@ MAX_ITERATIONS = 1e+5
 # b is the emission matrix, size NxM, every ith row has the same distribution as ith observation
 # o is the observation matrix, size Nxt 
 # pi is the initial state probability, for our case it is fixed with the first state having 1 and the rest 0
-
-def scalar_dict_mult(scalar, dct):
-    # DICTIONARY MULTIPLICATION WITH SCALAR CODE
-    # either uses lst for list of dictionaries or uses dct for a single dictionary
-    newdict = {}
-    for key in dct:
-        newdict[key] = scalar*dct[key]
-
-    return newdict
-
-def scalar_listofdicts_mult(scalar, lst):
-    newlist = []
-    
-    for val in lst:
-        newdict = {}
-        for key in val:
-            newdict[key] = 2*val[key]
-        newlist.append(newdict)
-
-    return newlist
-
-def list_listofdicts_mult(lst, dictlst):
-    newlist = []
-    
-    for i in range(0, len(lst)):
-
-
-    for val in lst:
-        newdict = {}
-        for key in val:
-            newdict[key] = 2*val[key]
-        newlist.append(newdict)
-
-    return newlist
 
 def getprob(b, o, state):
     # gets the probability of observing o by getting all the probabilities of elements in o and multiplying them
@@ -121,7 +89,7 @@ def viterbi(a, b, o, pi):
         delta[0][i] = pi[i] * getprob(b, o[0], i)
 
     # inductive step
-    for t in range(1, timeStep):.
+    for t in range(1, timeStep):
         path.append([])
         for i in range(0, numberOfStates):
             maxarr = []
@@ -138,91 +106,98 @@ def viterbi(a, b, o, pi):
         path[t] = phi[t+1][path[t+1]]
 
     return path, delta, phi
- 
-    def HMMBaumWelch(self, o, N, dirichlet=False, verbose=False, rand_seed=1):
-        # Implements HMM Baum-Welch algorithm        
-        
-        T = np.shape(o)[0]
 
-        M = int(max(o))+1 # now all hist time-series will contain all observation vals, but we have to provide for all
+def baum_welch(a, b, pi, o):
 
-        digamma = np.zeros((N,N,T))
+    numberOfStates = np.shape(a)[0]
+    timeStep = np.shape(o)[0]
 
+    xi = np.zeros((numberOfStates, numberOfStates, timeStep))
+
+    iters = 0
+    error = TOLERANCE + 10
+    while iters < MAX_ITERATIONS and error > TOLERANCE:
+        prev_a = a.copy()
+        prev_b = b.copy()
+
+        # Estimate model parameters
+        alpha = forward(a, b, o, pi)
+        beta = backward(a, b, o)
+
+        # Expectation step
+        for t in range(0, timeStep-1):
+            for i in range(0, numberOfStates):
+                for j in range(0, numberOfStates):
+                    xi[i,j,t] = alpha[t][i] * a[i][j] * getprob(b, o[t], j) * beta[t+1][j]
+                xi[:,:,t] /= np.sum(xi[:,:,t])
+
+        for i in range(0, numberOfStates):
+            for j in range(0, numberOfStates):
+                xi[i,j,timeStep-1] = alpha[timeStep-1][i] * a[i][j]
+            xi[:,:,timeStep-1] /= np.sum(xi[:,:,timeStep-1])
+
+        # Maximization step
+        # note that delta[t][i] = sum(0, numberOfStates-1, xi[i,:,t])
+        for i in range(0, numberOfStates):
+            pi[i] = np.sum(xi[i,:,0])
+            for j in range(0, numberOfStates):
+                a[i][j] = np.sum(xi[i,j,:timeStep-1]) / np.sum(xi[i,:,:timeStep-1])    
+
+            gamma_tarr = []
+            # gamma_tarr holds all gamma_t(i) values for a fixed i and variable t
+            for t in range(0,timeStep):
+                gamma_tarr.append(np.sum(xi[i,:,t]))
+
+            for k in range(1, OBSERVATION_BINARY_COUNT+1):
+                zerosum = []
+                onesum = []
+                for t in range(0, timeStep):
+                    obs = o[t][k]
+                    if obs:
+                        zerosum.append(0)
+                        onesum.append(1)
+                    else:
+                        zerosum.append(1)
+                        onesum.append(0)
+
+                b[i][k]['0'] = np.sum(gamma_tarr * zerosum) / np.sum(xi[i,:,:])
+                b[i][k]['1'] = np.sum(gamma_tarr * onesum) / np.sum(xi[i,:,:])
+            for k in range(OBSERVATION_BINARY_COUNT+1, OBSERVATION_LENGTH):
+                zerosum = []
+                onesum = []
+                twosum = []
+
+                for t in range(0, timeStep):
+                    obs = o[t][k]
+                    if not obs:
+                        zerosum.append(1)
+                        onesum.append(0)
+                        twosum.append(0)
+                    elif obs == 1:
+                        zerosum.append(0)
+                        onesum.append(1)
+                        twosum.append(0)
+                    elif obs == 2:
+                        zerosum.append(0)
+                        onesum.append(0)
+                        twosum.append(1)
+
+                b[i][k]['0'] = np.sum(gamma_tarr * zerosum) / np.sum(xi[i,:,:])
+                b[i][k]['1'] = np.sum(gamma_tarr * onesum) / np.sum(xi[i,:,:])
+                b[i][k]['2'] = np.sum(gamma_tarr * twosum) / np.sum(xi[i,:,:])
+
+        error = (np.abs(a-prev_a)).max() + (np.abs(b-prev_b)).max() 
+        iters += 1            
+        print ("Iteration: ", iters, " error: ", error, "P(O|lambda): ", np.sum(alpha[:,T-1]))
     
-        # Initialise A, B and pi randomly, but so that they sum to one
-        np.random.seed(rand_seed)
-        
-        # Initialisation can be done either using dirichlet distribution (all randoms sum to one) 
-        # or using approximates uniforms from matrix sizes
-        if dirichlet:
-            pi = np.ndarray.flatten(np.random.dirichlet(np.ones(N),size=1))
-            
-            a = np.random.dirichlet(np.ones(N),size=N)
-            
-            b=np.random.dirichlet(np.ones(M),size=N)
-        else:
-            
-            pi_randomizer = np.ndarray.flatten(np.random.dirichlet(np.ones(N),size=1))/100
-            pi=1.0/N*np.ones(N)-pi_randomizer
-
-            a_randomizer = np.random.dirichlet(np.ones(N),size=N)/100
-            a=1.0/N*np.ones([N,N])-a_randomizer
-
-            b_randomizer=np.random.dirichlet(np.ones(M),size=N)/100
-            b = 1.0/M*np.ones([N,M])-b_randomizer
-
-        
-        error = self.tolerance+10
-        itter = 0
-        while ((error > self.tolerance) & (itter < self.max_iter)):   
-
-            prev_a = a.copy()
-            prev_b = b.copy()
-    
-            # Estimate model parameters
-            alpha, c = self.HMMfwd(a, b, o, pi)
-            beta = self.HMMbwd(a, b, o, c) 
-    
-            for t in xrange(T-1):
-                for i in xrange(N):
-                    for j in xrange(N):
-                        digamma[i,j,t] = alpha[i,t]*a[i,j]*b[j,o[t+1]]*beta[j,t+1]
-                digamma[:,:,t] /= np.sum(digamma[:,:,t])
-    
-
-            for i in xrange(N):
-                for j in xrange(N):
-                    digamma[i,j,T-1] = alpha[i,T-1]*a[i,j]
-            digamma[:,:,T-1] /= np.sum(digamma[:,:,T-1])
-    
-            # Maximize parameter expectation
-            for i in xrange(N):
-                pi[i] = np.sum(digamma[i,:,0])
-                for j in xrange(N):
-                    a[i,j] = np.sum(digamma[i,j,:T-1])/np.sum(digamma[i,:,:T-1])
-    	
-
-                for k in xrange(M):
-                    filter_vals = (o==k).nonzero()
-                    b[i,k] = np.sum(digamma[i,:,filter_vals])/np.sum(digamma[i,:,:])
-    
-            error = (np.abs(a-prev_a)).max() + (np.abs(b-prev_b)).max() 
-            itter += 1            
-            
-            if verbose:            
-                print ("Iteration: ", itter, " error: ", error, "P(O|lambda): ", np.sum(alpha[:,T-1]))
-    
-        return a, b, pi, alpha  
-
-    (a, b, pi_est, alpha_est) = hmm.HMMBaumWelch(hist_O, 2, False, True)
-    (path, delta, phi)=hmm.HMMViterbi(a, b, hist_O, pi_est)
+    return a, b, pi, alpha 
 
 def initializeMatrices(statecount):
     # initializes the a and b matrices that will be used for HMM
     a = []
     b = []
     pi = [1]
-    
+
     # initialize a using dirichlet distribution for every row
     a = np.random.dirichlet(np.ones(statecount),size=statecount)
 
@@ -262,7 +237,22 @@ def main():
     args = parser.parse_args()
 
     print("Extracting from file {} with an interval of {} seconds\n".format(args.filename, args.interval))
-    extractor.extract_features(args.filename, args.interval)
+    
+    # extract the features from pcap in the form of an array of Features objects
+    features = extractor.extract_features(args.filename, args.interval)
+    o = []
+    # transform the features into list form that will be used by HMM
+    for i in range(len(features)):
+        o.append(features[i].getObsArray())
+        
+    # initialize a, b, pi with random probabilities
+    (a, b, pi) = initializeMatrices(args.stateCount)
+
+    # estimate the emission and transition probabilities using Baum-Welch alg.
+    (a_est, b_est, pi_est, alpha_est) = baum_welch(a, b, pi, o)
+
+    # get the proability of emittion observation o using viterbi alg.
+    (path, delta, phi) = viterbi(a_est, b_est, o, pi_est)
 
 if __name__ == "__main__":
     main()
