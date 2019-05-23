@@ -44,6 +44,27 @@ class Features:
         self.STUNMessagePercentage = 0.0
         self.TCPMessagePercentage = 0.0
 
+    def getObsArray(self):
+        obsarr = []
+        obsarr.append(self.HTTPExists)
+        obsarr.append(self.DTLSExists)
+        obsarr.append(self.ICMPExists)
+        obsarr.append(self.firstSTUNMessageTime)
+        obsarr.append(self.DNSAtStart)
+        obsarr.append(self.DNSAtEnd)
+        obsarr.append(self.STUNMessageRate)
+        obsarr.append(self.ICMPMessageRate)
+        obsarr.append(self.UDPDatagramRate)
+        obsarr.append(self.numOfUDPHosts)
+        obsarr.append(self.numOfTLSHosts)
+        obsarr.append(self.numOfSTUNHosts)
+        obsarr.append(self.numOfTCPHosts)
+        obsarr.append(self.TLSMessagePercentage)
+        obsarr.append(self.STUNMessagePercentage)
+        obsarr.append(self.TCPMessagePercentage)
+        return obsarr
+        
+
 def extract_features(file, time_interval):
     # open the capture file and set up the parameters for the sliding time window
     td = datetime.timedelta(seconds = time_interval) # set the timedelta of the interval for window sliding
@@ -226,20 +247,23 @@ def extract_features(file, time_interval):
             featureArray.append(ftrs)
             ftrs = Features(startTime, time_interval)
 
-            # set the features that will be carried on for all iterations
-            oldftrs = featureArray[-1]
-            if oldftrs.DNSAtStart:
-                ftrs.DNSAtStart = 1
-            if oldftrs.DNSAtEnd:
-                ftrs.DNSAtEnd = 1
-            if oldftrs.DTLSExists:
-                ftrs.DTLSExists = 1
-            if oldftrs.HTTPExists:
-                ftrs.HTTPExists = 1
-            if oldftrs.ICMPExists:
-                ftrs.ICMPExists = 1
-            if oldftrs.firstSTUNMessageTime:
-                ftrs.firstSTUNMessageTime = 1
+            try:
+                # set the features that will be carried on for all iterations
+                oldftrs = featureArray[-1]
+                if oldftrs.DNSAtStart:
+                    ftrs.DNSAtStart = 1
+                if oldftrs.DNSAtEnd:
+                    ftrs.DNSAtEnd = 1
+                if oldftrs.DTLSExists:
+                    ftrs.DTLSExists = 1
+                if oldftrs.HTTPExists:
+                    ftrs.HTTPExists = 1
+                if oldftrs.ICMPExists:
+                    ftrs.ICMPExists = 1
+                if oldftrs.firstSTUNMessageTime:
+                    ftrs.firstSTUNMessageTime = 1
+            except IndexError:
+                pass
             
             print("Packets {}-{} processed".format(startCount, endCount))
             startCount = a.frame_info.number
