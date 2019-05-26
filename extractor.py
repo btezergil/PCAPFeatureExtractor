@@ -106,7 +106,7 @@ def extract_features(file, time_interval):
         # get the next packet from capture
         try:
             a = cap.next()
-        except StopIteration as e:
+        except StopIteration:
             break
 
         t = a.sniff_time

@@ -5,7 +5,7 @@ import extractor
 
 TOLERANCE = 1e-6
 MAX_ITERATIONS = 1e+5
-OBSERVATION_LENGTH = 17
+OBSERVATION_LENGTH = 16
 OBSERVATION_BINARY_COUNT = 6
 
 # FOR ALL IMPLEMENTATIONS, THE FOLLOWING PARAMETERS ARE USED: 
@@ -20,8 +20,32 @@ def getprob(b, o, state):
     # gets the probability of observing o by getting all the probabilities of elements in o and multiplying them
     prob = 1
     for i in range(0, len(b[state])):
-        prob *= b[state][i][o[i]]
+        prob *= b[state][i][str(o[i])]
     return prob
+
+def getmaxdiff(b, prev_b):
+    # gets the maximum difference of probability between b and prev_b
+    allprobs = []
+    for i in range(len(b)):
+        for j in range(len(b[i])):
+            newdct = b[i][j]
+            olddct = prev_b[i][j]
+            for k in range(len(newdct.values())):
+                allprobs.append(abs(list(newdct.values())[k] - list(olddct.values())[k]))
+
+    return max(allprobs)
+
+def logtonormalb(b):
+    for i in range(0, len(b)):
+        for j in range(0, OBSERVATION_BINARY_COUNT):
+            for k in range(0,2):
+                #if b[i][j][str(k)]: 
+                b[i][j][str(k)] = np.exp(b[i][j][str(k)])
+        for j in range(OBSERVATION_BINARY_COUNT, OBSERVATION_LENGTH):
+            for k in range(0,3):
+                #if b[i][j][str(k)]: 
+                b[i][j][str(k)] = np.exp(b[i][j][str(k)])
+
 
 def forward(a, b, o, pi):
     # HMM forward algorithm implementation 
@@ -32,17 +56,49 @@ def forward(a, b, o, pi):
 
     # initialization step
     for i in range(0, numberOfStates):
-        alpha[0].append(pi[i], getprob(b, o[0], i))
+        alpha[0].append(pi[i] * getprob(b, o[0], i))
 
     # inductive step
     for t in range(1, timeStep):
         tmp = []
-        
         for i in range(0, numberOfStates):
             probsum = 0
             for j in range(0, numberOfStates):
                 probsum += alpha[t-1][j] * a[j][i]
             tmp.append(probsum * getprob(b, o[t], i))
+        
+        alpha.append(tmp)
+
+    return alpha
+
+def forwardLog(a, b, o, pi):
+    # HMM forward algorithm with log probabilities
+
+    numberOfStates = np.shape(a)[0]
+    timeStep = np.shape(o)[0]
+    alpha = [[]]
+
+    # initialization step
+    for i in range(0, numberOfStates):
+        alpha[0].append(np.log(pi[i]) + np.log(getprob(b, o[0], i)))
+
+    # inductive step
+    for t in range(1, timeStep):
+        tmp = []
+        for i in range(0, numberOfStates):
+            probsum = 0
+            bmax = float('-inf')
+
+            # find b = (max a_i)
+            for j in range(0, numberOfStates):
+                val = alpha[t-1][j] + np.log(a[j][i])
+                if bmax < val:
+                    bmax = val
+
+            for j in range(0, numberOfStates):
+                probsum += np.exp(alpha[t-1][j] + np.log(a[j][i]) - bmax)
+
+            tmp.append(bmax + np.log(probsum) + np.log(getprob(b, o[t], i)))
         
         alpha.append(tmp)
 
@@ -62,6 +118,7 @@ def backward(a, b, o):
 
     # inductive step
     for t in range(timeStep-2, -1, -1):
+        tmp = []
         for i in range(0, numberOfStates):
             probsum = 0
             for j in range(0, numberOfStates):
@@ -72,14 +129,48 @@ def backward(a, b, o):
 
     return beta
 
+def backwardLog(a, b, o):
+    # HMM backward algorithm with log probabilities
+
+    numberOfStates = np.shape(a)[0]
+    timeStep = np.shape(o)[0]
+
+    beta = [[]]
+
+    # initialization step
+    for i in range(0, numberOfStates):
+        beta[0].append(np.exp(1))
+
+    # inductive step
+    for t in range(timeStep-2, -1, -1):
+        tmp = []
+        for i in range(0, numberOfStates):
+            probsum = 0
+            bmax = float('-inf')
+
+            for j in range(0, numberOfStates):
+                # beta[0] is used here because since we fill it by using the procedure, the last element inserted is the result of the last iteration
+                val = beta[0][j] + np.log(a[j][i]) + np.log(getprob(b, o[t+1], j))
+                if bmax < val:
+                    bmax = val
+
+            for j in range(0, numberOfStates):
+                # beta[0] is used here because since we fill it by using the procedure, the last element inserted is the result of the last iteration
+                probsum += np.exp(beta[0][j] + np.log(a[j][i]) + np.log(getprob(b, o[t+1], j)) - bmax)
+            tmp.append(bmax + np.log(probsum))
+
+        beta.insert(0, tmp)
+
+    return beta
+
 def viterbi(a, b, o, pi):
     # HMM viterbi algorithm implementation
 
     numberOfStates = np.shape(a)[0]
     timeStep = np.shape(o)[0]
 
-    delta = [[]]
-    phi = [[]]
+    delta = np.zeros((numberOfStates, timeStep))
+    phi = np.zeros((numberOfStates, timeStep))
 
     path = []
 
@@ -107,12 +198,48 @@ def viterbi(a, b, o, pi):
 
     return path, delta, phi
 
+def viterbiLog(a, b, o, pi):
+    # HMM viterbi algorithm implementation
+
+    numberOfStates = np.shape(a)[0]
+    timeStep = np.shape(o)[0]
+
+    delta = np.zeros((numberOfStates, timeStep))
+    phi = np.zeros((numberOfStates, timeStep))
+
+    path = []
+
+    # initialization step
+    for i in range(0, numberOfStates):
+        phi[0][i] = 0
+        delta[0][i] = np.log(pi[i]) + np.log(getprob(b, o[0], i))
+
+    # inductive step
+    for t in range(1, timeStep):
+        path.append([])
+        for i in range(0, numberOfStates):
+            maxarr = []
+            # note that for phi and delta the same argument is used, delta has an extra factor and phi uses argmax instead of max, so we use the same list
+            for j in range(0, numberOfStates):
+                maxarr.append(delta[t-1][j] + np.log(a[j][i]))
+            
+            phi[t][i] = np.argmax(maxarr)
+            delta[t][i] = max(maxarr) + np.log(getprob(b, o[t], i))
+
+    path[-1] = np.argmax(delta[timeStep-1])
+
+    for t in range(timeStep-2, -1, -1):
+        path[t] = phi[t+1][path[t+1]]
+
+    return path, delta, phi
+
 def baum_welch(a, b, pi, o):
 
     numberOfStates = np.shape(a)[0]
     timeStep = np.shape(o)[0]
 
     xi = np.zeros((numberOfStates, numberOfStates, timeStep))
+    gamma = np.zeros((numberOfStates, timeStep))
 
     iters = 0
     error = TOLERANCE + 10
@@ -121,34 +248,54 @@ def baum_welch(a, b, pi, o):
         prev_b = b.copy()
 
         # Estimate model parameters
-        alpha = forward(a, b, o, pi)
-        beta = backward(a, b, o)
+        alpha = forwardLog(a, b, o, pi)
+        beta = backwardLog(a, b, o)
 
         # Expectation step
         for t in range(0, timeStep-1):
             for i in range(0, numberOfStates):
                 for j in range(0, numberOfStates):
-                    xi[i,j,t] = alpha[t][i] * a[i][j] * getprob(b, o[t], j) * beta[t+1][j]
-                xi[:,:,t] /= np.sum(xi[:,:,t])
+                    xi[i,j,t] = alpha[t][i] + np.log(a[i][j]) + np.log(getprob(b, o[t+1], j)) + beta[t+1][j]
+            bmax = float('-inf')
+            for i in range(0, numberOfStates):
+                for j in range(0, numberOfStates):
+                    if bmax < xi[i,j,t]:
+                        bmax = xi[i,j,t]
+            xi[:,:,t] -= bmax + np.log(np.sum(np.exp(xi[:,:,t] - bmax)))
 
         for i in range(0, numberOfStates):
             for j in range(0, numberOfStates):
-                xi[i,j,timeStep-1] = alpha[timeStep-1][i] * a[i][j]
-            xi[:,:,timeStep-1] /= np.sum(xi[:,:,timeStep-1])
+                xi[i,j,timeStep-1] = alpha[timeStep-1][i] + np.log(a[i][j])
+        bmax = float('-inf')
+        for i in range(0, numberOfStates):
+            for j in range(0, numberOfStates):
+                if bmax < xi[i,j,timeStep-1]:
+                    bmax = xi[i,j,timeStep-1]
+        xi[:,:,timeStep-1] -= bmax + np.log(np.sum(np.exp(xi[:,:,timeStep-1] - bmax)))
+
+        for i in range(0, numberOfStates):
+            for t in range(0, timeStep):
+                gamma[i,t] = np.max(xi[i,:,t]) + np.log(np.sum(np.exp(xi[i,:,t] - np.max(xi[i,:,t]))))
 
         # Maximization step
         # note that delta[t][i] = sum(0, numberOfStates-1, xi[i,:,t])
+        # also note that a,b,pi values are in normal space, so we have to exp them back from log space
         for i in range(0, numberOfStates):
-            pi[i] = np.sum(xi[i,:,0])
+            bmax = float('-inf')
+            for k in range(0, numberOfStates):
+                if bmax < xi[i,k,0]:
+                    bmax = xi[i,k,0]
+            pi[i] = bmax + np.log(np.sum(np.exp(xi[i,:,0] - bmax)))
+
+            bmax = np.full(np.array(np.ones(numberOfStates)).shape, float('-inf'))
             for j in range(0, numberOfStates):
-                a[i][j] = np.sum(xi[i,j,:timeStep-1]) / np.sum(xi[i,:,:timeStep-1])    
+                a[i][j] = np.max(xi[i,j,:timeStep-1]) + np.log(np.sum(np.exp(xi[i,j,:timeStep-1] - np.max(xi[i,j,:timeStep-1])))) - np.max(xi[i,:,:timeStep-1]) - np.log(np.sum(np.exp(xi[i,:,:timeStep-1] - np.max(xi[i,:,:timeStep-1]))))
 
-            gamma_tarr = []
-            # gamma_tarr holds all gamma_t(i) values for a fixed i and variable t
-            for t in range(0,timeStep):
-                gamma_tarr.append(np.sum(xi[i,:,t]))
+            # calculate the denominator beforehand as it will be used a lot
+            #denom = np.max(gamma[i,:]) + np.log(np.sum(np.exp(gamma[i,:]) - np.max(gamma[i,:])))
+            denom = np.max(xi[i,:,:]) + np.log(np.sum(np.exp(xi[i,:,:] - np.max(xi[i,:,:]))))
 
-            for k in range(1, OBSERVATION_BINARY_COUNT+1):
+            for k in range(0, OBSERVATION_BINARY_COUNT):
                 zerosum = []
                 onesum = []
                 for t in range(0, timeStep):
@@ -160,9 +307,28 @@ def baum_welch(a, b, pi, o):
                         zerosum.append(1)
                         onesum.append(0)
 
-                b[i][k]['0'] = np.sum(gamma_tarr * zerosum) / np.sum(xi[i,:,:])
-                b[i][k]['1'] = np.sum(gamma_tarr * onesum) / np.sum(xi[i,:,:])
-            for k in range(OBSERVATION_BINARY_COUNT+1, OBSERVATION_LENGTH):
+                tmpzeroarr = (np.array(xi[i,:,:]) * np.array(zerosum)).flatten()
+                tmponearr = (np.array(xi[i,:,:]) * np.array(onesum)).flatten()
+                zeroarr = []
+                onearr = []
+                # get 0's out from the arrays as they will not be counting and cause problems in the log space
+                for l in range(0, len(tmpzeroarr)):
+                    if tmpzeroarr[l]:
+                        zeroarr.append(tmpzeroarr[l])
+                    if tmponearr[l]:
+                        onearr.append(tmponearr[l])
+                zeroarr = np.array(zeroarr)
+                onearr = np.array(onearr)
+
+                if 1 in zerosum:
+                    b[i][k]['0'] = np.max(zeroarr) + np.log(np.sum(np.exp(zeroarr - np.max(zeroarr)))) - denom
+                else:
+                    b[i][k]['0'] = float('-inf')
+                if 1 in onesum:                    
+                    b[i][k]['1'] = np.max(onearr) + np.log(np.sum(np.exp(onearr - np.max(onearr)))) - denom
+                else:
+                    b[i][k]['1'] = float('-inf')
+            for k in range(OBSERVATION_BINARY_COUNT, OBSERVATION_LENGTH):
                 zerosum = []
                 onesum = []
                 twosum = []
@@ -182,21 +348,50 @@ def baum_welch(a, b, pi, o):
                         onesum.append(0)
                         twosum.append(1)
 
-                b[i][k]['0'] = np.sum(gamma_tarr * zerosum) / np.sum(xi[i,:,:])
-                b[i][k]['1'] = np.sum(gamma_tarr * onesum) / np.sum(xi[i,:,:])
-                b[i][k]['2'] = np.sum(gamma_tarr * twosum) / np.sum(xi[i,:,:])
+                tmpzeroarr = (np.array(xi[i,:,:]) * np.array(zerosum)).flatten()
+                tmponearr = (np.array(xi[i,:,:]) * np.array(onesum)).flatten()
+                tmptwoarr = (np.array(xi[i,:,:]) * np.array(twosum)).flatten()
+                zeroarr = []
+                onearr = []
+                twoarr = []
+                for l in range(0, len(tmpzeroarr)):
+                    if tmpzeroarr[l]:
+                        zeroarr.append(tmpzeroarr[l])
+                    if tmponearr[l]:
+                        onearr.append(tmponearr[l]) 
+                    if tmptwoarr[l]:
+                        twoarr.append(tmptwoarr[l])
+                zeroarr = np.array(zeroarr)
+                onearr = np.array(onearr)
+                twoarr = np.array(twoarr)
 
-        error = (np.abs(a-prev_a)).max() + (np.abs(b-prev_b)).max() 
+                if 1 in zerosum :
+                    b[i][k]['0'] = np.max(zeroarr) + np.log(np.sum(np.exp(zeroarr - np.max(zeroarr)))) - denom
+                else:
+                    b[i][k]['0'] = float('-inf')
+                if 1 in onesum:
+                    b[i][k]['1'] = np.max(onearr) + np.log(np.sum(np.exp(onearr - np.max(onearr)))) - denom
+                else:
+                    b[i][k]['1'] = float('-inf')
+                if 1 in twosum:
+                    b[i][k]['2'] = np.max(twoarr) + np.log(np.sum(np.exp(twoarr - np.max(twoarr)))) - denom
+                else:
+                    b[i][k]['2'] = float('-inf')
+
+        # take exp of all values in a,b, and pi and take them back to normal probability space
+        a = np.exp(a)
+        pi = np.exp(pi)
+        logtonormalb(b)
+
+        error = (np.abs(a-prev_a)).max() + getmaxdiff(b, prev_b) 
         iters += 1            
-        print ("Iteration: ", iters, " error: ", error, "P(O|lambda): ", np.sum(alpha[:,T-1]))
+        print ("Iteration: ", iters, " error: ", error, "P(O|lambda): ", np.sum(alpha[timeStep-1]))
     
     return a, b, pi, alpha 
 
 def initializeMatrices(statecount):
     # initializes the a and b matrices that will be used for HMM
-    a = []
     b = []
-    pi = [1]
 
     # initialize a using dirichlet distribution for every row
     a = np.random.dirichlet(np.ones(statecount),size=statecount)
@@ -210,22 +405,21 @@ def initializeMatrices(statecount):
     # x7-x9 -> STUN-ICMP-UDP rates (0,1,2)
     # x10-x13 -> UDP-TLS-STUN-TCP host count (0,1,2)
     # x14-x16 -> TLS-STUN-TCP percentages (0,1,2)
-    for i in range(0, statecount):
+    for _ in range(0, statecount):
         tmp = []
         # dirichlet distribution is used to initialize the emission probabilities
-        for j in range(1, 7):
+        for _ in range(0, OBSERVATION_BINARY_COUNT):
             rand = np.random.dirichlet(np.ones(2),size=1)
             dct = {'0':rand[0][0], '1':rand[0][1]}
             tmp.append(dct)
-        for j in range(7, 17):
+        for _ in range(OBSERVATION_BINARY_COUNT, OBSERVATION_LENGTH):
             rand = np.random.dirichlet(np.ones(3),size=1)
             dct = {'0':rand[0][0], '1':rand[0][1], '2':rand[0][2]}
             tmp.append(dct)
         b.append(tmp)
 
     # initialize pi, our starting state is always the first state
-    for i in range(0, statecount-1):
-        pi.append(0)
+    pi = np.random.dirichlet(np.ones(statecount))
 
     return (a, b, pi)
 
