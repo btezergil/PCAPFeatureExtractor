@@ -46,6 +46,56 @@ def logtonormalb(b):
                 #if b[i][j][str(k)]: 
                 b[i][j][str(k)] = np.exp(b[i][j][str(k)])
 
+def normalize(a, b, pi):
+    # EXPERIMENTAL
+    # eliminates zero possibilities from a,b and pi arrays
+    scaled = False
+    for i in range(len(pi)):
+        if pi[i] < TOLERANCE:
+            pi[i] = TOLERANCE
+            scaled = True
+    if scaled:
+        denom = np.sum(pi)
+        for i in range(len(pi)):
+            pi[i] /= denom
+
+    scaled = False
+    for i in range(len(a)):
+        for j in range(len(a[0])):
+            if a[i][j] < TOLERANCE:
+                a[i][j] = TOLERANCE
+                scaled = True
+        if scaled:
+            denom = np.sum(a[i])
+            for j in range(len(a[0])):
+                a[i][j] /= denom
+            scaled = False
+
+    scaled = False
+    for i in range(0, len(b)):
+        for j in range(0, OBSERVATION_BINARY_COUNT):
+            for k in range(0,2):
+                if b[i][j][str(k)] < TOLERANCE:  
+                    b[i][j][str(k)] = TOLERANCE
+                    scaled = True
+            if scaled:
+                denom = b[i][j]['0'] + b[i][j]['1']
+                # scale back to 1
+                for k in range(0,2):
+                    b[i][j][str(k)] /= denom
+            scaled = False
+        for j in range(OBSERVATION_BINARY_COUNT, OBSERVATION_LENGTH):
+            for k in range(0,3):
+                if b[i][j][str(k)] < TOLERANCE:  
+                    b[i][j][str(k)] = TOLERANCE
+                    scaled = True
+            if scaled:
+                denom = b[i][j]['0'] + b[i][j]['1'] + b[i][j]['2']
+                # scale back to 1
+                for k in range(0,3):
+                    b[i][j][str(k)] /= denom
+            scaled = False
+
 
 def forward(a, b, o, pi):
     # HMM forward algorithm implementation 
@@ -207,12 +257,12 @@ def viterbiLog(a, b, o, pi):
     delta = np.zeros((numberOfStates, timeStep))
     phi = np.zeros((numberOfStates, timeStep))
 
-    path = []
+    path = [0 for i in range(timeStep)]
 
     # initialization step
     for i in range(0, numberOfStates):
-        phi[0][i] = 0
-        delta[0][i] = np.log(pi[i]) + np.log(getprob(b, o[0], i))
+        phi[i,0] = 0
+        delta[i,0] = np.log(pi[i]) + np.log(getprob(b, o[0], i))
 
     # inductive step
     for t in range(1, timeStep):
@@ -221,15 +271,15 @@ def viterbiLog(a, b, o, pi):
             maxarr = []
             # note that for phi and delta the same argument is used, delta has an extra factor and phi uses argmax instead of max, so we use the same list
             for j in range(0, numberOfStates):
-                maxarr.append(delta[t-1][j] + np.log(a[j][i]))
+                maxarr.append(delta[j,t-1] + np.log(a[j][i]))
             
-            phi[t][i] = np.argmax(maxarr)
-            delta[t][i] = max(maxarr) + np.log(getprob(b, o[t], i))
+            phi[i,t] = np.argmax(maxarr)
+            delta[i,t] = max(maxarr) + np.log(getprob(b, o[t], i))
 
-    path[-1] = np.argmax(delta[timeStep-1])
+    path[-1] = np.argmax(delta[:,timeStep-1])
 
     for t in range(timeStep-2, -1, -1):
-        path[t] = phi[t+1][path[t+1]]
+        path[t] = phi[:,t+1][path[t+1]]
 
     return path, delta, phi
 
@@ -239,7 +289,6 @@ def baum_welch(a, b, pi, o):
     timeStep = np.shape(o)[0]
 
     xi = np.zeros((numberOfStates, numberOfStates, timeStep))
-    gamma = np.zeros((numberOfStates, timeStep))
 
     iters = 0
     error = TOLERANCE + 10
@@ -256,43 +305,21 @@ def baum_welch(a, b, pi, o):
             for i in range(0, numberOfStates):
                 for j in range(0, numberOfStates):
                     xi[i,j,t] = alpha[t][i] + np.log(a[i][j]) + np.log(getprob(b, o[t+1], j)) + beta[t+1][j]
-            bmax = float('-inf')
-            for i in range(0, numberOfStates):
-                for j in range(0, numberOfStates):
-                    if bmax < xi[i,j,t]:
-                        bmax = xi[i,j,t]
-            xi[:,:,t] -= bmax + np.log(np.sum(np.exp(xi[:,:,t] - bmax)))
+            xi[:,:,t] -= np.max(xi[:,:,t]) + np.log(np.sum(np.exp(xi[:,:,t] - np.max(xi[:,:,t]))))
 
         for i in range(0, numberOfStates):
             for j in range(0, numberOfStates):
                 xi[i,j,timeStep-1] = alpha[timeStep-1][i] + np.log(a[i][j])
-        bmax = float('-inf')
-        for i in range(0, numberOfStates):
-            for j in range(0, numberOfStates):
-                if bmax < xi[i,j,timeStep-1]:
-                    bmax = xi[i,j,timeStep-1]
-        xi[:,:,timeStep-1] -= bmax + np.log(np.sum(np.exp(xi[:,:,timeStep-1] - bmax)))
-
-        for i in range(0, numberOfStates):
-            for t in range(0, timeStep):
-                gamma[i,t] = np.max(xi[i,:,t]) + np.log(np.sum(np.exp(xi[i,:,t] - np.max(xi[i,:,t]))))
+        xi[:,:,timeStep-1] -= np.max(xi[:,:,timeStep-1]) + np.log(np.sum(np.exp(xi[:,:,timeStep-1] - np.max(xi[:,:,timeStep-1]))))
 
         # Maximization step
-        # note that delta[t][i] = sum(0, numberOfStates-1, xi[i,:,t])
-        # also note that a,b,pi values are in normal space, so we have to exp them back from log space
+        # note that a,b,pi values are in normal space, so we have to exp them back from log space
         for i in range(0, numberOfStates):
-            bmax = float('-inf')
-            for k in range(0, numberOfStates):
-                if bmax < xi[i,k,0]:
-                    bmax = xi[i,k,0]
-            pi[i] = bmax + np.log(np.sum(np.exp(xi[i,:,0] - bmax)))
+            pi[i] = np.max(xi[i,:,0]) + np.log(np.sum(np.exp(xi[i,:,0] - np.max(xi[i,:,0]))))
 
-            bmax = np.full(np.array(np.ones(numberOfStates)).shape, float('-inf'))
             for j in range(0, numberOfStates):
                 a[i][j] = np.max(xi[i,j,:timeStep-1]) + np.log(np.sum(np.exp(xi[i,j,:timeStep-1] - np.max(xi[i,j,:timeStep-1])))) - np.max(xi[i,:,:timeStep-1]) - np.log(np.sum(np.exp(xi[i,:,:timeStep-1] - np.max(xi[i,:,:timeStep-1]))))
 
-            # calculate the denominator beforehand as it will be used a lot
-            #denom = np.max(gamma[i,:]) + np.log(np.sum(np.exp(gamma[i,:]) - np.max(gamma[i,:])))
             denom = np.max(xi[i,:,:]) + np.log(np.sum(np.exp(xi[i,:,:] - np.max(xi[i,:,:]))))
 
             for k in range(0, OBSERVATION_BINARY_COUNT):
@@ -382,6 +409,7 @@ def baum_welch(a, b, pi, o):
         a = np.exp(a)
         pi = np.exp(pi)
         logtonormalb(b)
+        normalize(a, b, pi)
 
         error = (np.abs(a-prev_a)).max() + getmaxdiff(b, prev_b) 
         iters += 1            
@@ -446,7 +474,7 @@ def main():
     (a_est, b_est, pi_est, alpha_est) = baum_welch(a, b, pi, o)
 
     # get the proability of emittion observation o using viterbi alg.
-    (path, delta, phi) = viterbi(a_est, b_est, o, pi_est)
+    (path, delta, phi) = viterbiLog(a_est, b_est, o, pi_est)
 
 if __name__ == "__main__":
     main()
