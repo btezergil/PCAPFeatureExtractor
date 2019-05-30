@@ -2,11 +2,16 @@ import numpy as np
 import argparse
 import datetime
 import extractor
+import copy
+import pickle
 
-TOLERANCE = 1e-6
+TOLERANCE = 1e-5
+ERR_TOLERANCE = 1e-6
 MAX_ITERATIONS = 1e+5
 OBSERVATION_LENGTH = 16
 OBSERVATION_BINARY_COUNT = 6
+
+OBSERVATION_PATH = '/home/btezergil/Desktop/research488/pickledObs/'
 
 # FOR ALL IMPLEMENTATIONS, THE FOLLOWING PARAMETERS ARE USED: 
 # there are N hidden states, t observations with each having M elements. 
@@ -95,6 +100,40 @@ def normalize(a, b, pi):
                 for k in range(0,3):
                     b[i][j][str(k)] /= denom
             scaled = False
+
+def mergeArrays(all_as, all_bs, all_pis):
+    # EXPERIMENTAL
+    # gets an array of a's, b's and pi's and merges them into one a,b,pi
+    (a, b, pi) = initializeMatrices(len(all_pis[0]))
+
+    for i in range(len(all_pis[0])):
+        probsum = 0
+        for j in range(len(all_pis)):
+            probsum += all_pis[j][i]
+        pi[i] = probsum / extractor.CAP_COUNT
+
+    for i in range(len(all_as[0])):
+        for j in range(len(all_as[0])):
+            probsum = 0
+            for k in range(len(all_as)):
+                probsum += all_as[k][i][j]
+            a[i][j] = probsum / extractor.CAP_COUNT
+
+    for i in range(0, len(all_bs[0])):
+        for j in range(0, OBSERVATION_BINARY_COUNT):
+            for k in range(0,2):
+                probsum = 0
+                for l in range(len(all_bs)):
+                    probsum += all_bs[l][i][j][str(k)]
+                b[i][j][str(k)] = probsum / extractor.CAP_COUNT
+        for j in range(OBSERVATION_BINARY_COUNT, OBSERVATION_LENGTH):
+            for k in range(0,3):
+                probsum = 0
+                for l in range(len(all_bs)):
+                    probsum += all_bs[l][i][j][str(k)]
+                b[i][j][str(k)] = probsum / extractor.CAP_COUNT
+
+    return a, b, pi
 
 
 def forward(a, b, o, pi):
@@ -266,7 +305,6 @@ def viterbiLog(a, b, o, pi):
 
     # inductive step
     for t in range(1, timeStep):
-        path.append([])
         for i in range(0, numberOfStates):
             maxarr = []
             # note that for phi and delta the same argument is used, delta has an extra factor and phi uses argmax instead of max, so we use the same list
@@ -274,12 +312,12 @@ def viterbiLog(a, b, o, pi):
                 maxarr.append(delta[j,t-1] + np.log(a[j][i]))
             
             phi[i,t] = np.argmax(maxarr)
-            delta[i,t] = max(maxarr) + np.log(getprob(b, o[t], i))
+            delta[i,t] = np.max(maxarr) + np.log(getprob(b, o[t], i))
 
     path[-1] = np.argmax(delta[:,timeStep-1])
 
-    for t in range(timeStep-2, -1, -1):
-        path[t] = phi[:,t+1][path[t+1]]
+    for t in range(timeStep-3, -1, -1):
+        path[t] = phi[int(path[t+1]),t+1]
 
     return path, delta, phi
 
@@ -292,11 +330,22 @@ def baum_welch(a, b, pi, o):
 
     iters = 0
     error = TOLERANCE + 10
-    while iters < MAX_ITERATIONS and error > TOLERANCE:
-        prev_a = a.copy()
-        prev_b = b.copy()
+    while iters < MAX_ITERATIONS and error > ERR_TOLERANCE:
+        prev_a = np.copy(a)
+        prev_b = copy.deepcopy(b)
+        #prev_pi = np.copy(pi)
 
-        # Estimate model parameters
+        #all_as = []
+        #all_bs = []
+        #all_pis = []
+
+        #for ind in range(extractor.CAP_COUNT):
+        #    o = obsArr[ind]
+        #    a = prev_a
+        #    b = prev_b
+        #    pi = prev_pi
+
+            # Estimate model parameters
         alpha = forwardLog(a, b, o, pi)
         beta = backwardLog(a, b, o)
 
@@ -411,9 +460,16 @@ def baum_welch(a, b, pi, o):
         logtonormalb(b)
         normalize(a, b, pi)
 
+        #all_as.append(a)
+        #all_bs.append(b)
+        #all_pis.append(pi)
+
+        # merge all a,b,pi's into one array of their own
+        #(a, b, pi) = mergeArrays(all_as, all_bs, all_pis)
+
         error = (np.abs(a-prev_a)).max() + getmaxdiff(b, prev_b) 
         iters += 1            
-        print ("Iteration: ", iters, " error: ", error, "P(O|lambda): ", np.sum(alpha[timeStep-1]))
+        print ("Iteration: ", iters, " error: ", error, "P(O|lambda): ", np.sum(np.exp(alpha[timeStep-1])))
     
     return a, b, pi, alpha 
 
@@ -454,18 +510,34 @@ def initializeMatrices(statecount):
 def main():
     parser = argparse.ArgumentParser(description = 'Extract features from given pcap file.')
     parser.add_argument("filename", type = str)
+    #parser.add_argument("appname", type = str)
     parser.add_argument("stateCount", type = int)
     parser.add_argument("interval", type = float)
     args = parser.parse_args()
 
-    print("Extracting from file {} with an interval of {} seconds\n".format(args.filename, args.interval))
+    print("Extracting for {} with an interval of {} seconds\n".format(args.filename, args.interval))
     
     # extract the features from pcap in the form of an array of Features objects
-    features = extractor.extract_features(args.filename, args.interval)
-    o = []
+    #features = extractor.extract_fileList(args.appname, args.interval)
+    #obsArr = []
     # transform the features into list form that will be used by HMM
-    for i in range(len(features)):
-        o.append(features[i].getObsArray())
+    #for i in range(extractor.CAP_COUNT):
+    #    o = []
+    #    for j in range(len(features[i])):
+    #        o.append(features[i][j].getObsArray())
+    #    obsArr.append(o)
+
+    try:
+        # get the features in pickled form
+        with open(OBSERVATION_PATH + args.filename + '.pickle', 'rb') as f:
+            o = pickle.load(f)
+    except FileNotFoundError:
+        # extract the features from pcap in the form of an array of Features objects
+        features = extractor.extract_features(args.filename, args.interval)
+        # transform the features into list form that will be used by HMM
+        o = []
+        for i in range(len(features)):
+            o.append(features[i].getObsArray())
         
     # initialize a, b, pi with random probabilities
     (a, b, pi) = initializeMatrices(args.stateCount)
@@ -473,8 +545,14 @@ def main():
     # estimate the emission and transition probabilities using Baum-Welch alg.
     (a_est, b_est, pi_est, alpha_est) = baum_welch(a, b, pi, o)
 
+    with open('data.pickle', 'wb') as f:
+    # Pickle the 'data' dictionary using the highest protocol available.
+        pickle.dump((a_est, b_est, pi_est), f, pickle.HIGHEST_PROTOCOL)
+    #(a_est, b_est, pi_est, alpha_est) = baum_welch(a, b, pi, obsArr)
+
     # get the proability of emittion observation o using viterbi alg.
-    (path, delta, phi) = viterbiLog(a_est, b_est, o, pi_est)
+    #(path, delta, phi) = viterbiLog(a_est, b_est, o, pi_est)
+    #(path, delta, phi) = viterbiLog(a_est, b_est, obsArr, pi_est)
 
 if __name__ == "__main__":
     main()
