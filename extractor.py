@@ -1,11 +1,15 @@
 import pyshark
 import datetime, argparse
+import pickle
 
-PCAP_PATH = '/home/btezergil/Desktop/research488/hangouts/'
+SKYPE_PATH = '/home/btezergil/Desktop/research488/skype/'
+HANGOUTS_PATH = '/home/btezergil/Desktop/research488/hangouts/'
+OBSERVATION_PATH = '/home/btezergil/Desktop/research488/pickledObs/'
 
 # for atStart and atEnd variables, we choose a fixed time window
 START_WINDOW = 5
 END_WINDOW = 5
+CAP_COUNT = 2
 
 class Features:
     def __init__(self, startTime, interval):
@@ -76,9 +80,6 @@ def extract_features(file, time_interval):
     #print(endTime.strftime("%A, %d. %B %Y %I:%M.%S%p"))
 
     # prepare the feature dictionary and list of the features at every time window
-    # TODO: HIS WILL BE DONE AFTER CHECKING OUT HMM LIBRARIES
-    # THE FEATURE FORMAT IS DECIDED BY THOSE LIBRARIES AND FEATURES WILL BE PREPARE ACCORDINGLY
-
     startCount = 1
     endCount = 1
     startWindow = cap[0].sniff_time + datetime.timedelta(seconds = START_WINDOW)
@@ -105,50 +106,55 @@ def extract_features(file, time_interval):
     while True:
         # get the next packet from capture
         try:
-            a = cap.next()
+            currpkt = cap.next()
         except StopIteration:
             break
 
-        t = a.sniff_time
+        try:
+            _ = currpkt.ip
+        except AttributeError:
+            continue
+
+        t = currpkt.sniff_time
         totalCount += 1
 
         # check the protocol of the packet, increment counts or save hosts
-        if 'SSL' in a:
+        if 'SSL' in currpkt:
             TLSCount += 1
-            host = a.ip.host
+            host = currpkt.ip.host
             if host not in TLSHosts:
                 TLSHosts.append(host)
-        if 'TCP' in a:
+        if 'TCP' in currpkt:
             TCPCount += 1
-            host = a.ip.host
+            host = currpkt.ip.host
             if host not in TCPHosts:
                 TCPHosts.append(host)
-        if 'UDP' in a:
+        if 'UDP' in currpkt:
             UDPCount += 1
-            host = a.ip.host
+            host = currpkt.ip.host
             if host not in UDPHosts:
                 UDPHosts.append(host)
-        if 'STUN' in a:
+        if 'STUN' in currpkt:
             STUNCount += 1
-            host = a.ip.host
+            host = currpkt.ip.host
             if host not in STUNHosts:
                 STUNHosts.append(host)
-        if 'HTTP' in a:
+        if 'HTTP' in currpkt:
             ftrs.HTTPExists = 1
-        if 'DTLS' in a:
+        if 'DTLS' in currpkt:
             ftrs.DTLSExists = 1
-        if 'ICMP' in a:
+        if 'ICMP' in currpkt:
             ftrs.ICMPExists = 1
             ICMPCount += 1
 
         # check atStart and atEnd conditions
         if t < startWindow:
-            if 'DNS' in a:
+            if 'DNS' in currpkt:
                 ftrs.DNSAtStart = 1
-            if 'STUN' in a:
+            if 'STUN' in currpkt:
                 ftrs.firstSTUNMessageTime = 1
         elif t > endWindow:
-            if 'DNS' in a:
+            if 'DNS' in currpkt:
                 ftrs.DNSAtEnd = 1
 
         
@@ -266,7 +272,7 @@ def extract_features(file, time_interval):
                 pass
             
             print("Packets {}-{} processed".format(startCount, endCount))
-            startCount = a.frame_info.number
+            startCount = currpkt.frame_info.number
 
         endCount += 1
 
@@ -276,6 +282,34 @@ def extract_features(file, time_interval):
 
     return featureArray
 
+def extract_fileList(app, time_interval):
+    # extracts an array of feature arrays for a given app
+    suffix = '.pcap'
+    if app == 'skype':
+        prefix = 'skype-'
+        path = SKYPE_PATH
+    elif app == 'hangouts':
+        prefix = 'hangouts-'
+        path = HANGOUTS_PATH
+        
+    featureArrayArray = []
+    for i in range(1, CAP_COUNT+1):
+        filestr = path + prefix + str(i) + suffix
+        featureArray = extract_features(filestr, time_interval)
+        featureArrayArray.append(featureArray)
+
+    return featureArrayArray
+
+def extract_intofile(infile, time_interval):
+    features = extract_features(HANGOUTS_PATH + infile, time_interval)
+    o = []
+    for i in range(len(features)):
+        o.append(features[i].getObsArray())
+
+    with open(OBSERVATION_PATH + infile + '.pickle', 'wb') as f:
+    # Pickle the 'data' dictionary using the highest protocol available.
+        pickle.dump(o, f, pickle.HIGHEST_PROTOCOL)
+
 def main():
     parser = argparse.ArgumentParser(description = 'Extract features from given pcap file.')
     parser.add_argument("filename", type = str)
@@ -283,7 +317,8 @@ def main():
     args = parser.parse_args()
 
     print("Extracting from file {} with an interval of {} seconds\n".format(args.filename, args.interval))
-    extract_features(args.filename, args.interval)
+    #extract_fileList(args.appname, args.interval)
+    extract_intofile(args.filename, args.interval)
 
 if __name__ == "__main__":
     main()
